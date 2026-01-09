@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
 // 宣告全域 gapi 變數，解決 TypeScript 找不到名稱的問題
 declare const gapi: any;
