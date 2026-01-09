@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+
+/* 如果你之前在 CSS 裡寫了 @apply，請確保放在 @import 之後 */
+body {
+  @apply bg-gray-100 text-gray-900;
+}
