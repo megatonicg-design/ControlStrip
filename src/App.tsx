@@ -5,8 +5,8 @@ declare const gapi: any;
 declare const google: any;
 
 // === 你的配置資訊 ===
-const API_KEY = '你的_API_KEY'; 
-const CLIENT_ID = '你的_CLIENT_ID';
+const API_KEY = 'AIzaSyA9VpbrE2VRmbv3dotsjjxiRevAiY0eO9c'; 
+const CLIENT_ID = '136659181144-9fgta3j88bd1n2og0oouau3n41sb0uuq.apps.googleusercontent.com';
 const TARGET_FOLDER_ID = '1TLN39CRrKw2i5489p73omwG3vzuC6awh'; 
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
