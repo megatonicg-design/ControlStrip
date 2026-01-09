@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
 
-// 宣告全域 gapi 變數，解決 TypeScript 找不到名稱的問題
+// 宣告全域變數，防止 TypeScript 報錯
 declare const gapi: any;
+declare const google: any;
 
-// 1. 設定你的 Google Drive 資料夾 ID
-const TARGET_FOLDER_ID = '1TLN39CRrKw2i5489p73omwG3vzuC6awh';
+// === 你的配置資訊 ===
+const API_KEY = '你的_API_KEY'; 
+const CLIENT_ID = '你的_CLIENT_ID';
+const TARGET_FOLDER_ID = '1TLN39CRrKw2i5489p73omwG3vzuC6awh'; 
+const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 const SECTION_CONFIGS: any = {
   'D-MAX': { yMax: 0.20, yMin: -0.20, label: 'D-MAX' },
@@ -13,6 +18,7 @@ const SECTION_CONFIGS: any = {
   'D-MIN': { yMax: 0.10, yMin: -0.10, label: 'D-MIN' },
 };
 
+// === 子組件：繪圖區塊 ===
 const PlotSection = ({ title, data, colorBands, channels, config }: any) => {
   const height = 140;
   const scaleY = height / (config.yMax - config.yMin);
@@ -73,12 +79,14 @@ const PlotSection = ({ title, data, colorBands, channels, config }: any) => {
   );
 };
 
+// === 主組件 ===
 export default function App() {
   const [activeTab, setActiveTab] = useState<'input' | 'reference'>('input');
   const [history, setHistory] = useState<any[]>([]);
   const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [syncStatus, setSyncStatus] = useState('offline');
-  const [isSyncing, setIsSyncing] = useState(false); // 新增狀態
+  const [isSyncing, setIsSyncing] = useState(false); 
+  const [tokenClient, setTokenClient] = useState<any>(null);
 
   const [reference, setReference] = useState<any>(() => {
     const saved = localStorage.getItem('e6_reference');
@@ -92,14 +100,31 @@ export default function App() {
 
   const [formData, setFormData] = useState<any>({});
 
+  // 初始化 Google API 和 Google Identity Services
   useEffect(() => {
-    localStorage.setItem('e6_reference', JSON.stringify(reference));
-  }, [reference]);
+    const initClient = async () => {
+      try {
+        await new Promise((resolve) => gapi.load('client', resolve));
+        await gapi.client.init({ apiKey: API_KEY, discoveryDocs: [DISCOVERY_DOC] });
 
-  // 將同步邏輯移入組件內部，這樣它才能訪問到 setIsSyncing
+        const client = google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPES,
+          callback: (tokenResponse: any) => {
+            if (tokenResponse && tokenResponse.access_token) {
+              setIsDriveConnected(true);
+              setSyncStatus('synced');
+            }
+          },
+        });
+        setTokenClient(client);
+      } catch (err) { console.error('GAPI Init Error:', err); }
+    };
+    if (typeof gapi !== 'undefined') initClient();
+  }, []);
+
   const syncToCloud = async (dataToSync: any) => {
-    if (!isDriveConnected || typeof gapi === 'undefined') return;
-    
+    if (!isDriveConnected || typeof gapi.client.drive === 'undefined') return;
     setIsSyncing(true);
     setSyncStatus('syncing');
     try {
@@ -114,42 +139,28 @@ export default function App() {
       if (existingFile) {
         await gapi.client.request({
           path: `/upload/drive/v3/files/${existingFile.id}`,
-          method: 'PATCH',
-          params: { uploadType: 'media' },
-          body: fileContent,
+          method: 'PATCH', params: { uploadType: 'media' }, body: fileContent,
         });
       } else {
-        const metadata = {
-          name: 'e6_control_data.json',
-          mimeType: 'application/json',
-          parents: [TARGET_FOLDER_ID],
-        };
+        const metadata = { name: 'e6_control_data.json', mimeType: 'application/json', parents: [TARGET_FOLDER_ID] };
         const boundary = '-------314159265358979323846';
-        const delimiter = "\r\n--" + boundary + "\r\n";
-        const close_delim = "\r\n--" + boundary + "--";
-        const multipartRequestBody = delimiter + 'Content-Type: application/json\r\n\r\n' + JSON.stringify(metadata) + delimiter + 'Content-Type: application/json\r\n\r\n' + fileContent + close_delim;
+        const multipartRequestBody = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${fileContent}\r\n--${boundary}--`;
 
         await gapi.client.request({
-          path: '/upload/drive/v3/files',
-          method: 'POST',
-          params: { uploadType: 'multipart' },
-          headers: { 'Content-Type': 'multipart/related; boundary="' + boundary + '"' },
-          body: multipartRequestBody,
+          path: '/upload/drive/v3/files', method: 'POST', params: { uploadType: 'multipart' },
+          headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipartRequestBody,
         });
       }
       setSyncStatus('synced');
-    } catch (error) {
-      console.error('同步失敗：', error);
-      setSyncStatus('error');
-    } finally {
-      setIsSyncing(false);
-    }
+    } catch (error) { setSyncStatus('error'); } finally { setIsSyncing(false); }
   };
 
-  const handleInput = (e: any, type: 'form' | 'ref') => {
-    const val = parseFloat(e.target.value) || 0;
-    if (type === 'form') setFormData({ ...formData, [e.target.name]: val });
-    else setReference({ ...reference, [e.target.name]: val });
+  const handleConnectDrive = () => {
+    if (tokenClient) {
+      tokenClient.requestAccessToken({ prompt: 'consent' });
+    } else {
+      alert("Google API 載入中，請稍候...");
+    }
   };
 
   const handleSubmit = (e: any) => {
@@ -181,7 +192,7 @@ export default function App() {
           {isSyncing ? 'Syncing...' : syncStatus === 'synced' ? 'Cloud Synced' : 'Local Only'}
         </span>
         {!isDriveConnected && (
-          <button onClick={() => {setIsDriveConnected(true); syncToCloud({ history, reference });}} className="text-[10px] bg-white border border-black px-2 py-1 hover:bg-blue-50">
+          <button onClick={handleConnectDrive} className="text-[10px] bg-white border border-black px-2 py-1 hover:bg-blue-50">
             CONNECT DRIVE
           </button>
         )}
@@ -202,7 +213,7 @@ export default function App() {
                   <h3 className="text-xs font-black border-b border-gray-200">{sec} (Measured)</h3>
                   <div className="grid grid-cols-3 gap-2">
                     {['R', 'G', 'B'].map(c => (
-                      <input key={c} name={`${sec}_${c}`} type="number" step="0.01" onChange={(e)=>handleInput(e,'form')} className="border p-1 text-xs font-mono w-full" placeholder={c} />
+                      <input key={c} name={`${sec}_${c}`} type="number" step="0.01" onChange={(e:any)=>setFormData({ ...formData, [e.target.name]: parseFloat(e.target.value) || 0 })} className="border p-1 text-xs font-mono w-full" placeholder={c} />
                     ))}
                   </div>
                 </div>
@@ -217,27 +228,13 @@ export default function App() {
                   <h3 className="text-xs font-bold">{sec}</h3>
                   <div className="grid grid-cols-3 gap-2">
                     {['R', 'G', 'B'].map(c => (
-                      <input key={c} name={`${sec}_${c}`} value={reference[`${sec}_${c}`] || ''} type="number" step="0.01" onChange={(e)=>handleInput(e,'ref')} className="border-b-2 border-blue-200 p-1 text-xs font-mono w-full" placeholder={c} />
+                      <input key={c} name={`${sec}_${c}`} value={reference[`${sec}_${c}`] || ''} type="number" step="0.01" onChange={(e:any)=>setReference({ ...reference, [e.target.name]: parseFloat(e.target.value) || 0 })} className="border-b-2 border-blue-200 p-1 text-xs font-mono w-full" placeholder={c} />
                     ))}
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </div>
-
-        <div className="mt-auto p-4 border-t border-gray-200">
-          <button 
-            onClick={() => {
-              const blob = new Blob([JSON.stringify({ reference, history })], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url; a.download = `E6_Backup_${new Date().toISOString().slice(0,10)}.json`; a.click();
-            }}
-            className="w-full text-[10px] border border-dashed border-gray-400 py-2 text-gray-500 hover:text-black uppercase"
-          >
-            Download Backup (.JSON)
-          </button>
         </div>
       </div>
 
